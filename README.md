@@ -48,6 +48,8 @@ The Image Resizing Lambda function receives these additional environment variabl
 
 ## Deploying to AWS
 
+### Manual Deployment
+
 1. Build the TypeScript code (output will be in `dist/`):
 
    ```bash
@@ -67,6 +69,28 @@ The Image Resizing Lambda function receives these additional environment variabl
    cd infra
    cdk deploy
    ```
+
+### Automated Deployment with GitHub Actions
+
+This project includes a GitHub Actions workflow that automatically deploys the CDK stack when changes are pushed to the main branch.
+
+#### Setup Requirements
+
+1. Add the following secrets to your GitHub repository:
+   - `AWS_ROLE_ARN`: The ARN of an IAM role that GitHub Actions can assume
+   - `AWS_REGION`: The AWS region to deploy to (e.g., `us-east-1`)
+
+2. Create an IAM role in AWS with appropriate permissions and configure it to trust GitHub Actions OIDC provider.
+
+#### How It Works
+
+The workflow:
+1. Builds your TypeScript code
+2. Installs dependencies, including Sharp with Lambda compatibility
+3. Bootstraps CDK (if needed)
+4. Deploys your CDK stack
+
+You can also manually trigger the workflow from the GitHub Actions tab.
 
 ## API Endpoints
 
@@ -92,6 +116,7 @@ All API endpoints are available under the `/api` path. Example endpoints:
 - `npm run build` — Compile TypeScript to `dist/`
 - `npm run dev` — Run the Express app locally
 - `cd infra && cdk deploy` — Deploy the stack to AWS
+- `git push origin main` — Trigger the GitHub Actions deployment workflow
 
 ---
 
@@ -112,6 +137,17 @@ For example, if you upload `cat.jpg` and have configured sizes of `150x300` and 
 - `resized/500x600/cat.jpg` (resized version)
 
 You can access these resized images directly through CloudFront or via presigned URLs from the API.
+
+### Sharp Compatibility with AWS Lambda
+
+The image resizing functionality uses the Sharp library, which requires special handling for AWS Lambda compatibility:
+
+- Sharp includes platform-specific binaries that must match Lambda's Linux environment
+- Our GitHub Actions workflow installs Sharp with the correct platform and architecture flags:
+  ```bash
+  npm install --platform=linux --arch=x64 --include=optional sharp
+  ```
+- If you're deploying manually, make sure to install Sharp with these flags to ensure Lambda compatibility
 
 
 - `GET /health` - Health check
