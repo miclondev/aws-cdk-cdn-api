@@ -1,0 +1,57 @@
+name: Deploy CDK Stack
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:  # Allow manual triggering
+
+permissions:
+  contents: read
+  id-token: write  # Required for requesting the JWT
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install sharp for AWS Lambda compatibility
+        run: |
+          # Remove any existing sharp installation
+          npm uninstall sharp
+          # Install sharp with the correct platform and architecture for Lambda
+          npm install --platform=linux --arch=x64 --include=optional sharp
+          npm install --save-dev @types/sharp
+
+      - name: Build TypeScript code
+        run: npm run build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: CDK Bootstrap (if needed)
+        working-directory: ./infra
+        run: npx cdk bootstrap
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy CDK Stack
+        working-directory: ./infra
+        run: npx cdk deploy --require-approval never
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
