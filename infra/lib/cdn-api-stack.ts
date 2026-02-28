@@ -33,12 +33,11 @@ export class CdnApiStack extends cdk.Stack {
 
     // Lambda function for Express API
     const apiLambda = new lambda.Function(this, "ApiLambda", {
-      runtime: lambda.Runtime.NODEJS_18_X,
+      runtime: lambda.Runtime.NODEJS_22_X,
       handler: "index.handler", // adjust if your build output is different
       code: lambda.Code.fromAsset(path.join(__dirname, "../../dist")),
       environment: {
         S3_BUCKET_NAME: bucket.bucketName,
-        AWS_REGION: cdk.Stack.of(this).region,
       },
       memorySize: 1024,
       timeout: cdk.Duration.seconds(30),
@@ -67,7 +66,7 @@ export class CdnApiStack extends cdk.Stack {
     // CloudFront distribution
     const distribution = new cloudfront.Distribution(this, "Distribution", {
       defaultBehavior: {
-        origin: new origins.S3Origin(bucket),
+        origin: origins.S3BucketOrigin.withOriginAccessControl(bucket),
         allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
@@ -89,14 +88,13 @@ export class CdnApiStack extends cdk.Stack {
 
     // Image Resizing Lambda
     const imageResizeLambda = new lambda.Function(this, "ImageResizeLambda", {
-      runtime: lambda.Runtime.NODEJS_18_X,
+      runtime: lambda.Runtime.NODEJS_22_X,
       handler: "functions/image-resize-lambda.handler",
       code: lambda.Code.fromAsset(path.join(__dirname, "../../dist")),
       environment: {
         S3_BUCKET_NAME: bucket.bucketName,
-        AWS_REGION: cdk.Stack.of(this).region,
-        ENABLE_IMAGE_RESIZE: "true", // Can be overridden with environment variable
-        MAX_SIZES: "150x300,500x600", // Can be overridden with environment variable
+        ENABLE_IMAGE_RESIZE: "true",
+        MAX_SIZES: "150x300,500x600",
       },
       memorySize: 1024,
       timeout: cdk.Duration.seconds(60),
@@ -106,9 +104,11 @@ export class CdnApiStack extends cdk.Stack {
     bucket.grantReadWrite(imageResizeLambda);
 
     // Add S3 event notification to trigger the Lambda function when objects are created
+    // Only trigger for objects in the uploads/ prefix to avoid unnecessary invocations
     bucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
-      new s3n.LambdaDestination(imageResizeLambda)
+      new s3n.LambdaDestination(imageResizeLambda),
+      { prefix: "uploads/" }
     );
 
     // Output useful values

@@ -16,30 +16,38 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '22'
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: Install root dependencies
         run: npm ci
 
       - name: Install sharp for AWS Lambda compatibility
         run: |
-          # Remove any existing sharp installation
           npm uninstall sharp
-          # Install sharp with the correct platform and architecture for Lambda
           npm install --platform=linux --arch=x64 --include=optional sharp
-          npm install --save-dev @types/sharp
 
       - name: Build TypeScript code
         run: npm run build
 
+      - name: Run tests
+        run: npm test
+
+      - name: Install infra dependencies
+        working-directory: ./infra
+        run: npm ci
+
+      - name: Run infra tests
+        working-directory: ./infra
+        run: npm test
+
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}

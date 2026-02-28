@@ -7,9 +7,22 @@ import {
   ListObjectsV2Command,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import path from "path";
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max file size
+});
+
+/**
+ * Sanitize a filename by stripping path traversal characters and
+ * keeping only the basename with safe characters.
+ */
+function sanitizeFileName(fileName: string): string {
+  const basename = path.basename(fileName);
+  return basename.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
 
 // Get presigned URL for uploading a file
 router.get("/presigned-url", (async (req: Request, res: Response) => {
@@ -17,9 +30,7 @@ router.get("/presigned-url", (async (req: Request, res: Response) => {
     const { fileName, contentType } = req.query;
 
     if (!fileName || !contentType) {
-      return res
-        .status(400)
-        .json({ error: "fileName and contentType are required" });
+      return res.status(400).json({ error: "fileName and contentType are required" });
     }
 
     const s3Client = req.app.locals.s3Client;
@@ -29,7 +40,8 @@ router.get("/presigned-url", (async (req: Request, res: Response) => {
       return res.status(500).json({ error: "S3 bucket name not configured" });
     }
 
-    const key = `uploads/${Date.now()}-${fileName}`;
+    const safeName = sanitizeFileName(fileName as string);
+    const key = `uploads/${Date.now()}-${safeName}`;
 
     const command = new PutObjectCommand({
       Bucket: bucketName,
@@ -52,10 +64,7 @@ router.get("/presigned-url", (async (req: Request, res: Response) => {
 }) as RequestHandler);
 
 // Upload file directly to S3
-router.post("/upload", upload.single("file"), (async (
-  req: Request,
-  res: Response
-) => {
+router.post("/upload", upload.single("file"), (async (req: Request, res: Response) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
@@ -68,7 +77,8 @@ router.post("/upload", upload.single("file"), (async (
       return res.status(500).json({ error: "S3 bucket name not configured" });
     }
 
-    const key = `uploads/${Date.now()}-${req.file.originalname}`;
+    const safeName = sanitizeFileName(req.file.originalname);
+    const key = `uploads/${Date.now()}-${safeName}`;
 
     const command = new PutObjectCommand({
       Bucket: bucketName,
@@ -90,9 +100,14 @@ router.post("/upload", upload.single("file"), (async (
 }) as RequestHandler);
 
 // Get a presigned URL for downloading a file
-router.get("/object/:key", (async (req: Request, res: Response) => {
+// Uses query param ?key= to support nested S3 keys (e.g. uploads/2024/image.jpg)
+router.get("/object", (async (req: Request, res: Response) => {
   try {
-    const { key } = req.params;
+    const { key } = req.query;
+
+    if (!key || typeof key !== "string") {
+      return res.status(400).json({ error: "key query parameter is required" });
+    }
 
     const s3Client = req.app.locals.s3Client;
     const bucketName = req.app.locals.bucketName;
@@ -147,9 +162,14 @@ router.get("/list", (async (req: Request, res: Response) => {
 }) as RequestHandler);
 
 // Delete an object
-router.delete("/object/:key", (async (req: Request, res: Response) => {
+// Uses query param ?key= to support nested S3 keys
+router.delete("/object", (async (req: Request, res: Response) => {
   try {
-    const { key } = req.params;
+    const { key } = req.query;
+
+    if (!key || typeof key !== "string") {
+      return res.status(400).json({ error: "key query parameter is required" });
+    }
 
     const s3Client = req.app.locals.s3Client;
     const bucketName = req.app.locals.bucketName;
